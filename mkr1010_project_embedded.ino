@@ -43,7 +43,11 @@ WiFiClient wifiClient;// Initialize the client library
 char ssid[] = SECRET_SSID;        // your network SSID (name)
 char pass[] = SECRET_PASS;    // your network password (use for WPA, or use as key for WEP)
 int status = WL_IDLE_STATUS;
+char apiToken[] = SECRET_TOKEN; //api token
 
+
+unsigned long currentTime;//last config timestamp
+unsigned long tmsLastConfig;//last config timestamp
 float readTemp = 0.0;//temp read by the sensor
 bool enabled = false;//boolean that enable/disable the thermostat, dispite the temp
 float desiredTemp = 0.0;//Desirded temp, under which the thermostath will be enable, of course if and only if enabled is true and of course considering the delta
@@ -51,6 +55,7 @@ bool relayOpened = false;//current relay status -> true opened (Cooling Down), f
 unsigned long lastRead = 0;
 unsigned long lastSend = 0;
 unsigned long lastSwitch = 0;
+char server[] = "europe-west1-progetto-embedded-system.cloudfunctions.net";
 int n = 0;
 
 void setup() {
@@ -89,12 +94,18 @@ void setup() {
   Serial.print("You're connected to the network");
   printWifiStatus();
 
+  //get timestamp from the server
+  //this because arduino does not have an RTC (madule can be bought)
+  //to solve this we can do a call to the server to retrieve the server time
+  //and we we need to now the current time we have to do currentTime + millis(), mills() return millisecond from startup not 100% accurate but enough for our use
+  getCurrentTime();
+
   //get the config from the server-
   //if true we got succesfully the config from the server
   //if false there was a problem with the server connection
   //or this is the first time that we use the termostat, so no config is stored onto the server
   //in the last case we will set default settings
-  if(!getConfig()){
+  if(!getConfig(false)){//in this case we want the last config stored on to the server
     enabled = false;
     desiredTemp = 22.0;
     //and also we will send the config to the server for the first time
