@@ -2,6 +2,34 @@
 //FIRST LINE -> Heating Status(Idle/Heating) and the temp read by the sensor
 //SECOND LINE -> Enabled status(Enabled/Disabled) and the desired temp set by the user
 
+void initDisplay(){
+  lcd.init();
+  lcd.backlight();
+  lcd.home();
+  lcd.setCursor(0,0);
+  lcd.print("BASIC THERMOSTAT");
+  lcd.setCursor(0,1);
+  lcd.print("GIANMARIA SCORZA");
+
+}
+
+void printInitWifiMsg(){
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("INITIALIZING");
+  lcd.setCursor(0,1);
+  lcd.print("WIFI");
+}
+
+
+void printSSIDConnectedMsg(){
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("CONNECTED TO :");
+  lcd.setCursor(0,1);
+  lcd.print(ssid);
+}
+
 void mainScreen(){
   //print main screen 
  

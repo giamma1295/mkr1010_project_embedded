@@ -34,7 +34,7 @@
 #define delta 1.0 // 1 degree celsius
 
 //Object
-LiquidCrystal_I2C lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin); //class contain all necessary to control an LCD i2c.
+LiquidCrystal_I2C lcd(0x27, 16, 2); //class contain all necessary to control an LCD i2c.0x6B
 DHT dht(DHTPIN, DHTTYPE);//Initialize the DHT object
 WiFiClient wifiClient;// Initialize the client library
 //-----------global variables------------
@@ -55,15 +55,25 @@ bool relayOpened = false;//current relay status -> true opened (Cooling Down), f
 unsigned long lastRead = 0;
 unsigned long lastSend = 0;
 unsigned long lastSwitch = 0;
-char server[] = "europe-west1-progetto-embedded-system.cloudfunctions.net";
-int n = 0;
+
+// Api Endpoint
+char server[] = "scogiam95.altervista.org";
+String timestampEndPoint = "/res/ems/timestamp.php";
+String configurationEndPoint = "/res/ems/configuration.php";
+
+
 
 void setup() {
 
   // initialize serial for debugging
   Serial.begin(9600);
 
+  //lcd initializzation
+  initDisplay();
+  delay(1000);
+
   //WiFi Initializzation 
+  printInitWifiMsg();
   // check for the WiFi module:
   if (WiFi.status() == WL_NO_MODULE) {
     Serial.println("Communication with WiFi module failed!");
@@ -92,15 +102,17 @@ void setup() {
   
   // you're connected now, so print out the data:
   Serial.print("You're connected to the network");
-  printWifiStatus();
-
+  printWifiStatus();//print to serial connection status
+  
+  printSSIDConnectedMsg(); //print to lcd wifi connection status
+  
   //get timestamp from the server
   //this because arduino does not have an RTC (madule can be bought)
   //to solve this we can do a call to the server to retrieve the server time
   //and we we need to now the current time we have to do currentTime + millis(), mills() return millisecond from startup not 100% accurate but enough for our use
   getCurrentTime();
 
-  //get the config from the server-
+  //get the config from the server
   //if true we got succesfully the config from the server
   //if false there was a problem with the server connection
   //or this is the first time that we use the termostat, so no config is stored onto the server
@@ -112,15 +124,6 @@ void setup() {
     //sendConfigAndStatus();
   }
 
-  //lcd initializzation 
-  lcd.begin(16,2);
-  lcd.setBacklightPin(BACKLIGHT_PIN,POSITIVE);
-  lcd.setBacklight(HIGH);
-  
-  lcd.home ();    
-  lcd.print("Hello World!"); 
-
-
   //inti DHT11 and first read
   dht.begin();
   readTemp = dht.readTemperature();
@@ -128,6 +131,9 @@ void setup() {
 
   //relay init
   pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);//relay closed
+  delay(1000);
+  digitalWrite(RELAY_PIN, HIGH);//relay closed
   //we need to define for the first time relayOpened
   //if read temp is lower than desired -> relayOpened = false (relay closed at t0)
   //if read temp is higher than desired -> relayOpened = true (relay opened at t0)
@@ -142,7 +148,7 @@ void setup() {
     Serial.println("Switched off");
   }
   //we can now print the Main Screen
-  //mainScreen();
+  mainScreen();
   
 }
 
