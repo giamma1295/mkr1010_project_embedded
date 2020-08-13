@@ -6,6 +6,7 @@
 #include <SPI.h>//library used to communicate with SPI devices, onboard wifi is an SPI device
 #include <WiFiNINA.h>//wifi library
 #include "arduino_secrets.h"//arduino secret, used to store sensitive info, like wifi passwd or API secret token...
+
 //---Costant value
 //lcd releated costant
 #define I2C_ADDR 0x27 
@@ -17,10 +18,17 @@
 #define D5_pin 5
 #define D6_pin 6
 #define D7_pin 7
+
 //DHT11 sensor costant
 #define DHTPIN 6 //pin on which is connected the sensor
 #define DHTTYPE DHT11 //sensor type
+
+//Pin definition
 #define RELAY_PIN 7 //pin for relay
+#define ENB_BTN 0 //pin for on/off button
+#define PLUS_BTN 1 //pin for increase desidered temp
+#define MINUS_BTN 8 //pin for decrease desidered temp
+
 //delta enable and disable the relay
 //we cannot trigger the relay every time the read temp by the sensor cross the desired temp, because this will happen a lot of times in a short period
 //this behaviour can break either the relay or, in an catostrofic scenario, the heater itself
@@ -32,6 +40,7 @@
 //at time t3, t3>t2, we have readTemp = desiredTemp, instead of closing the relay we wait until readTemp will reach desiredTemp - delta.
 //that's why this costant
 #define delta 1.0 // 1 degree celsius
+
 
 //Object
 LiquidCrystal_I2C lcd(0x27, 16, 2); //class contain all necessary to control an LCD i2c.0x6B
@@ -61,8 +70,6 @@ char server[] = "scogiam95.altervista.org";
 String timestampEndPoint = "/res/ems/timestamp.php";
 String configurationEndPoint = "/res/ems/configuration.php";
 
-
-
 void setup() {
 
   // initialize serial for debugging
@@ -73,38 +80,16 @@ void setup() {
   delay(1000);
 
   //WiFi Initializzation 
-  printInitWifiMsg();
-  // check for the WiFi module:
-  if (WiFi.status() == WL_NO_MODULE) {
-    Serial.println("Communication with WiFi module failed!");
-    // don't continue
-    while (true);
-  }
+  wifiInit();
 
-  String fv = WiFi.firmwareVersion();
-  if (fv != NULL && fv.length() > 0) {
-    Serial.print("WiFi Firmware Version : ");
-    Serial.println(fv);
-  }
-  else{
-    Serial.println("Unable to find WiFi Firmware Versione");
-  }
+  //Buttons configuration
+  pinMode(ENB_BTN, INPUT);
+  pinMode(PLUS_BTN, INPUT);
+  pinMode(MINUS_BTN, INPUT);
 
-  // attempt to connect to Wifi network:
-  while (status != WL_CONNECTED) {
-    Serial.print("Attempting to connect to WPA SSID: ");
-    Serial.println(ssid);
-    // Connect to WPA/WPA2 network:
-    status = WiFi.begin(ssid, pass);
-    // wait 10 seconds for connection:
-    delay(10000);
-  }
-  
-  // you're connected now, so print out the data:
-  Serial.print("You're connected to the network");
-  printWifiStatus();//print to serial connection status
-  
-  printSSIDConnectedMsg(); //print to lcd wifi connection status
+  attachInterrupt(ENB_BTN, enbBtnCallback, RISING);
+  attachInterrupt(PLUS_BTN, plusBtnCallback, RISING);
+  attachInterrupt(MINUS_BTN, minusBtnCallback, RISING);
   
   //get timestamp from the server
   //this because arduino does not have an RTC (madule can be bought)

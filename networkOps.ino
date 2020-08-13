@@ -1,3 +1,39 @@
+
+void wifiInit(){
+  printInitWifiMsg();
+  // check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("Communication with WiFi module failed!");
+    // don't continue
+    while (true);
+  }
+
+  String fv = WiFi.firmwareVersion();
+  if (fv != NULL && fv.length() > 0) {
+    Serial.print("WiFi Firmware Version : ");
+    Serial.println(fv);
+  }
+  else{
+    Serial.println("Unable to find WiFi Firmware Versione");
+  }
+
+  // attempt to connect to Wifi network:
+  while (status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to WPA SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network:
+    status = WiFi.begin(ssid, pass);
+    // wait 5 seconds for connection:
+    delay(5000);
+  }
+  
+  // you're connected now, so print out the data:
+  Serial.print("You're connected to the network");
+  printWifiStatus();//print to serial connection status
+  printSSIDConnectedMsg(); //print to lcd wifi connection status
+}
+
+
 // this method makes a HTTP connection to the server
 bool getConfig(bool last){
   wifiClient.setTimeout(10000);//set timeout for the connection
