@@ -5,6 +5,7 @@
 #include <ArduinoJson.h> //library for json serialization e deserialization
 #include <SPI.h>//library used to communicate with SPI devices, onboard wifi is an SPI device
 #include <WiFiNINA.h>//wifi library
+#include <RTCZero.h>// real time clock library, used to take control of time
 #include "arduino_secrets.h"//arduino secret, used to store sensitive info, like wifi passwd or API secret token...
 
 //---Costant value
@@ -21,7 +22,7 @@
 
 //DHT11 sensor costant
 #define DHTPIN 6 //pin on which is connected the sensor
-#define DHTTYPE DHT11 //sensor type
+#define DHTTYPE DHT22 //sensor type
 
 //Pin definition
 #define RELAY_PIN 7 //pin for relay
@@ -46,6 +47,7 @@
 LiquidCrystal_I2C lcd(0x27, 16, 2); //class contain all necessary to control an LCD i2c.0x6B
 DHT dht(DHTPIN, DHTTYPE);//Initialize the DHT object
 WiFiClient wifiClient;// Initialize the client library
+RTCZero rtc;// Initialise the Rtc object
 //-----------global variables------------
 
 ///////please enter your sensitive data in the Secret tab/arduino_secrets.h
@@ -55,15 +57,17 @@ int status = WL_IDLE_STATUS;
 char apiToken[] = SECRET_TOKEN; //api token
 
 
-unsigned long currentTime;//last config timestamp
+unsigned long currentTime;//last config timestamp, 
 unsigned long tmsLastConfig;//last config timestamp
 float readTemp = 0.0;//temp read by the sensor
 bool enabled = false;//boolean that enable/disable the thermostat, dispite the temp
 float desiredTemp = 0.0;//Desirded temp, under which the thermostath will be enable, of course if and only if enabled is true and of course considering the delta
 bool relayOpened = false;//current relay status -> true opened (Cooling Down), false closed (heating Up)
-unsigned long lastRead = 0;
-unsigned long lastSend = 0;
-unsigned long lastSwitch = 0;
+unsigned long lastRead = 0; //mills from last dht22 read
+unsigned long lastRetrieve = 0; //millis from last api config request
+unsigned long lastSwitch = 0; // millis from last toggleRelay invoke
+bool configMauallyChanged = false; //configuration manualy changed by pressing a button
+unsigned long lastBtnPress = 0; //millis from last button press, use in void loop as tollerance before send new config, reuqire in order to manage button press in rapid sequence
 
 // Api Endpoint
 char server[] = "scogiam95.altervista.org";
@@ -87,15 +91,16 @@ void setup() {
   pinMode(PLUS_BTN, INPUT);
   pinMode(MINUS_BTN, INPUT);
 
-  attachInterrupt(ENB_BTN, enbBtnCallback, RISING);
-  attachInterrupt(PLUS_BTN, plusBtnCallback, RISING);
-  attachInterrupt(MINUS_BTN, minusBtnCallback, RISING);
+  //Set callback function to interrupts
+  attachInterrupt(ENB_BTN, enbBtnCallback, RISING);//callback executed when will be pressed ENB_BTN 
+  attachInterrupt(PLUS_BTN, plusBtnCallback, RISING);//callback executed when will be pressed PLUS_BTN 
+  attachInterrupt(MINUS_BTN, minusBtnCallback, RISING);//callback executed when will be pressed MINUS_BTN 
   
-  //get timestamp from the server
+  //get timestamp from the server and init rtc
   //this because arduino does not have an RTC (madule can be bought)
   //to solve this we can do a call to the server to retrieve the server time
-  //and we we need to now the current time we have to do currentTime + millis(), mills() return millisecond from startup not 100% accurate but enough for our use
-  getCurrentTime();
+  //and we with this we can emulate the RTC with the RTCzero library
+  intiRtcWithServer();
 
   //get the config from the server
   //if true we got succesfully the config from the server
@@ -105,23 +110,22 @@ void setup() {
   if(!getConfig(false)){//in this case we want the last config stored on to the server
     enabled = false;
     desiredTemp = 22.0;
-    //and also we will send the config to the server for the first time
-    //sendConfigAndStatus();
+    //we will also set configMauallyChanged = true, so in void loop we will send the stock config to the server and so we will init it!
+    configMauallyChanged = true;
   }
+  lastRetrieve =  millis();
 
-  //inti DHT11 and first read
+  //inti DHT22 and first read
   dht.begin();
   readTemp = dht.readTemperature();
   printReadTemp();
 
   //relay init
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);//relay closed
-  delay(1000);
-  digitalWrite(RELAY_PIN, HIGH);//relay closed
   //we need to define for the first time relayOpened
   //if read temp is lower than desired -> relayOpened = false (relay closed at t0)
   //if read temp is higher than desired -> relayOpened = true (relay opened at t0)
+  //these condition apply only on the bootstrap phase, check relayOps for the regular condition
   if(readTemp < desiredTemp){
     digitalWrite(RELAY_PIN, LOW);//relay closed
     relayOpened = false;
@@ -138,32 +142,45 @@ void setup() {
 }
 
 void loop() { 
-  
-  /*lcd.setCursor(0,1);
-  lcd.print(n);
-  lcd.print(" ");
-  delay(1000);
-  n++;*/
-
-  //into the loop we will
-  //1) read the temp
-  //2-) if buttons is pressed: 
-  //  2.1) check if a button is pressed -> yes: do the action of that button (1-> toggle enable, 2 -> decrease desired tem, 3 -> increase desired temp)
-  //  2.2) send data to the server -> both config and last read temp
-  //3-)if buttons is not pressed:
-  //  3.1) get data from the server (this only -> if millis - last request > 10000, so only every 10 second we will send data to the server)
-  //  3.2) send data to the server(nevertheless we just got the config we will send both stored config and last temp read)
-  //4) call the method for switch on/off the relay, so turn on/off the heater
-  //5) refresh the screen by calling mainScreen()
-  
-  if(millis() - lastSwitch > 10000){
-    toggleRelay();
-    lastSwitch = millis();
-  }
+ 
+  //- every two seconds i will read the temperature (this becasue DHT22 reads new temps every 2 seconds), and update the display content
   if(millis() - lastRead > 2001){
+    Serial.print("Reading temperature... ");
     readTemp = dht.readTemperature();
     printReadTemp();
     lastRead = millis();
+    //refresh display
+    mainScreen();
+  }
+  //- every five seconds i will call the server in order to get new config that may was set
+  if(millis() - lastRetrieve > 5000){
+    Serial.println("Contacting Server in order to check if a new config was set");
+    getConfig(true);
+    //refresh display
+    lastRetrieve =  millis();
+    mainScreen();
+  }
+  //- every ten seconds i will call the toggleRelay function, this function will do all the logic releated to the relay
+  if(millis() - lastSwitch > 10000){
+    Serial.print("Calling toggle relay... ");
+    toggleRelay();
+    lastSwitch = millis();
+    //refresh display
+    mainScreen();
+  }
+  //- if the boolean "configMauallyChanged" is true i will send to the server the new config
+  // the new config will be sent to the server after 5 seconds from last btn press, this to avoid mulfonctioning if a multiple button are pressed in rapid sequence
+  // and avoid useless api calls
+  if(configMauallyChanged && (millis() - lastBtnPress > 5000)){
+    Serial.print("Configuration has changed, push to the server... ");
+    //send new config
+    pushConfig();
+    //after that i will set tmsLastConfig with the current timestamp, so next time i'll call the serve will not refresh the configuration
+    tmsLastConfig = rtc.getEpoch();//update the current configuration timestamp
+    //clean configMauallyChanged var
+    configMauallyChanged = false;
+    //refresh display
+    mainScreen();
   }
 
 }

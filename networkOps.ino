@@ -24,7 +24,7 @@ void wifiInit(){
     // Connect to WPA/WPA2 network:
     status = WiFi.begin(ssid, pass);
     // wait 5 seconds for connection:
-    delay(5000);
+    delay(3000);
   }
   
   // you're connected now, so print out the data:
@@ -48,7 +48,7 @@ bool getConfig(bool last){
   String param = String("?token=" + String(apiToken));
   //if last is true we will pass also last to get config only last config is higher than the one store on arduino
   if(last){
-    param = param + String(tmsLastConfig);
+    param = String(param + "&last=" + String(tmsLastConfig));
   }
   //Create request Head
   String head = String("GET " + configurationEndPoint + param + " HTTP/1.1");
@@ -103,27 +103,38 @@ bool getConfig(bool last){
   //if the config on arduino is newer than the one on the server we will skip it and mantain the arduino one else we will set the newer
 
   if(jsonParsed["desiredTemp"] != 0.0 && jsonParsed["tmsConfig"] != 0.0){
-    enabled = jsonParsed["enabled"];
-    desiredTemp = jsonParsed["desiredTemp"];
-    tmsLastConfig = jsonParsed["tmsConfig"];
-    
+  enabled = jsonParsed["enabled"];
+  desiredTemp = jsonParsed["desiredTemp"];
+  unsigned long tmplast = tmsLastConfig;
+  tmsLastConfig = jsonParsed["tmsConfig"];
+  //log the response value 
+  if(last){
+    Serial.println("config has changed serverSide!");
   }
-
-  //log the response value
-  Serial.println(F("Response:"));
   Serial.print("enabled : ");
-  Serial.println(enabled ? "true" : "false");
+  Serial.print(enabled ? "true - " : "false - ");
   Serial.print("desiredTemp : ");
   Serial.println(desiredTemp);
+
   
+  Serial.print("old tmplast : ");
+  Serial.print(tmplast);
+  Serial.print("new tmplast : ");
+  Serial.println(tmsLastConfig);
+  }
+  else{
+    Serial.println("no config gotten with this params");
+  }
   wifiClient.stop(); //close the connection to the server
+
+  //set lastRetrieve, current timestamp
   return true;
 }
 
 
 
-// this method makes a HTTP request to the cloud function to retrieve the current time
-bool getCurrentTime(){
+// this method makes a HTTP request to the backend to retrieve the current time and initialize the rtc object
+bool intiRtcWithServer(){
   wifiClient.setTimeout(10000);//set timeout for the connection
 
   if (!wifiClient.connect(server, 80)) { //connect to the remote host
@@ -178,11 +189,22 @@ bool getCurrentTime(){
     return false; //if the deserializzation will fail, i will return to the caller false
   }
 
-  currentTime = jsonParsed["tmsConfig"];
-
-  //log the response value
-  Serial.print(F("Retrieved Timestamp from the server : "));
-  Serial.print(currentTime);
+  rtc.begin();
+  rtc.setEpoch(jsonParsed["tmsConfig"]);
+  //Log DateTime
+  Serial.print(F("Retrieved Time from the server : "));
+  Serial.print(rtc.getHours());
+  Serial.print(":");
+  Serial.print(rtc.getMinutes());
+  Serial.print(":");
+  Serial.print(rtc.getSeconds());
+  Serial.print(" GMT ");
+  Serial.print(rtc.getDay());
+  Serial.print("/");
+  Serial.print(rtc.getMonth());
+  Serial.print("/");
+  Serial.println(rtc.getYear());
+  
   
   wifiClient.stop(); //close the connection to the server
   return true;
@@ -196,12 +218,11 @@ void pushConfig(){
   //status, containing readTemp and relayOpened
 
   //serialize the config variable into a json
-  const size_t capacity = JSON_OBJECT_SIZE(3);
+  const size_t capacity = JSON_OBJECT_SIZE(2);
   DynamicJsonDocument doc(capacity);
 
   doc["desiredTemp"] = desiredTemp;
   doc["enabled"] = enabled;
-  doc["tmsConfig"] = tmsLastConfig;
 
   String jsonSerialized = "";
   serializeJson(doc, jsonSerialized);
@@ -217,11 +238,11 @@ void pushConfig(){
   }
   Serial.println(F("Connected!"));
 
-  //create the header
-  char head[200]; 
-  strcat( head, "GET /configuration?token=");
-  strcat( head, apiToken);
-  strcat( head, " HTTP/1.1");
+  //Create params
+  String param = String("?token=" + String(apiToken));
+  //Create request Head
+  String head = String("POST " + configurationEndPoint + param + " HTTP/1.1");
+  Serial.println(head);
   
   // Send HTTP request to the remote host
   wifiClient.println(head);
@@ -263,7 +284,7 @@ void pushReadTemp(){
 
   doc["readTemp"] = readTemp;
   doc["readHumidity"] = readTemp;
-  doc["tmsRead"] = (currentTime + millis());
+  doc["tmsRead"] = (rtc.getEpoch());
 
   String jsonSerialized = "";
   serializeJson(doc, jsonSerialized);
