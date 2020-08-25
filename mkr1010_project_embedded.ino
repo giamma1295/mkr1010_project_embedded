@@ -9,17 +9,6 @@
 #include "arduino_secrets.h"//arduino secret, used to store sensitive info, like wifi passwd or API secret token...
 
 //---Costant value
-//lcd releated costant
-#define I2C_ADDR 0x27 
-#define BACKLIGHT_PIN 3
-#define En_pin 2
-#define Rw_pin 1
-#define Rs_pin 0
-#define D4_pin 4
-#define D5_pin 5
-#define D6_pin 6
-#define D7_pin 7
-
 //DHT11 sensor costant
 #define DHTPIN 6 //pin on which is connected the sensor
 #define DHTTYPE DHT22 //sensor type
@@ -55,9 +44,7 @@ char ssid[] = SECRET_SSID;        // your network SSID (name)
 char pass[] = SECRET_PASS;    // your network password (use for WPA, or use as key for WEP)
 int status = WL_IDLE_STATUS;
 char apiToken[] = SECRET_TOKEN; //api token
-
-
-unsigned long currentTime;//last config timestamp, 
+ 
 unsigned long tmsLastConfig;//last config timestamp
 float readTemp = 0.0;//temp read by the sensor
 bool enabled = false;//boolean that enable/disable the thermostat, dispite the temp
@@ -68,6 +55,7 @@ unsigned long lastRetrieve = 0; //millis from last api config request
 unsigned long lastSwitch = 0; // millis from last toggleRelay invoke
 bool configMauallyChanged = false; //configuration manualy changed by pressing a button
 unsigned long lastBtnPress = 0; //millis from last button press, use in void loop as tollerance before send new config, reuqire in order to manage button press in rapid sequence
+bool refreshScreen = false; // used to refresh the mainScreen on void loop, only when is needed
 
 // Api Endpoint
 char server[] = "scogiam95.altervista.org";
@@ -118,7 +106,8 @@ void setup() {
   //inti DHT22 and first read
   dht.begin();
   readTemp = dht.readTemperature();
-  printReadTemp();
+  Serial.print("Temps read: ");
+  Serial.println(readTemp);
 
   //relay init
   pinMode(RELAY_PIN, OUTPUT);
@@ -147,10 +136,12 @@ void loop() {
   if(millis() - lastRead > 2001){
     Serial.print("Reading temperature... ");
     readTemp = dht.readTemperature();
-    printReadTemp();
+    //log to serial
+    Serial.print("Temps read: ");
+    Serial.println(readTemp);
     lastRead = millis();
     //refresh display
-    mainScreen();
+    refreshScreen = true;
   }
   //- every five seconds i will call the server in order to get new config that may was set
   if(millis() - lastRetrieve > 5000){
@@ -158,7 +149,7 @@ void loop() {
     getConfig(true);
     //refresh display
     lastRetrieve =  millis();
-    mainScreen();
+    refreshScreen = true;
   }
   //- every ten seconds i will call the toggleRelay function, this function will do all the logic releated to the relay
   if(millis() - lastSwitch > 10000){
@@ -166,7 +157,7 @@ void loop() {
     toggleRelay();
     lastSwitch = millis();
     //refresh display
-    mainScreen();
+    refreshScreen = true;
   }
   //- if the boolean "configMauallyChanged" is true i will send to the server the new config
   // the new config will be sent to the server after 5 seconds from last btn press, this to avoid mulfonctioning if a multiple button are pressed in rapid sequence
@@ -180,7 +171,13 @@ void loop() {
     //clean configMauallyChanged var
     configMauallyChanged = false;
     //refresh display
+    refreshScreen = true;
+  }
+
+  if(refreshScreen){
+    //refresh display content
     mainScreen();
+    refreshScreen = false;
   }
 
 }

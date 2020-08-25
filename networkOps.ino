@@ -29,7 +29,23 @@ void wifiInit(){
   
   // you're connected now, so print out the data:
   Serial.print("You're connected to the network");
-  printWifiStatus();//print to serial connection status
+  
+  //print to serial connection status on serial
+  // print the SSID of the network you're attached to
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  // print your WiFi shield's IP address
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+
+  // print the received signal strength
+  long rssi = WiFi.RSSI();
+  Serial.print("Signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+  
   printSSIDConnectedMsg(); //print to lcd wifi connection status
 }
 
