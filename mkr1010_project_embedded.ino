@@ -166,8 +166,6 @@ void loop() {
     Serial.print("Configuration has changed, push to the server... ");
     //send new config
     pushConfig();
-    //after that i will set tmsLastConfig with the current timestamp, so next time i'll call the serve will not refresh the configuration
-    tmsLastConfig = rtc.getEpoch();//update the current configuration timestamp
     //clean configMauallyChanged var
     configMauallyChanged = false;
     //refresh display

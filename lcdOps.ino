@@ -53,18 +53,3 @@ void mainScreen(){
     
   }
 }
-
-//screen that show to the user a feedback for the "increase desired temp action"
-void increaseScreen(){
-  
-}
-
-//screen that show to the user a feedback for the "decrease desired temp action"
-void decreaseScreen(){
-  
-}
-
-//screen that show to the user a feedback for the "enable/disable action"
-void enableScreen(){
-  
-}
